@@ -93,6 +93,14 @@ const createRPFormatterClass = (config) => {
     });
   }
 
+  function createScenarioOutlineName(outlineName,tableHeader,row){
+
+    tableHeader.cells.forEach((varable, index) => {
+      outlineName = outlineName.replace(`<${varable.value}>`, row.cells[index].value);
+    });
+    return outlineName;
+  }
+
   function createScenarioFromOutlineExample(outline, example, location) {
     const found = example.tableBody.find((row) => row.location.line === location.line);
 
@@ -101,7 +109,7 @@ const createRPFormatterClass = (config) => {
     return {
       type: 'Scenario',
       steps: createSteps(example.tableHeader, found, outline.steps),
-      name: outline.name,
+      name: createScenarioOutlineName(outline.name,example.tableHeader,found),
       location: found.location,
       description: outline.description,
     };
@@ -287,8 +295,8 @@ const createRPFormatterClass = (config) => {
       let name = [keyword, context.scenario.name].join(': ');
       const eventAttributes = pickle.tags
         ? pickle.tags
-            .filter((tag) => !featureTags.find(createTagComparator(tag)))
-            .map((tag) => createAttribute(tag.name))
+          .filter((tag) => !featureTags.find(createTagComparator(tag)))
+          .map((tag) => createAttribute(tag.name))
         : [];
       const description =
         context.scenario.description ||
@@ -383,10 +391,23 @@ const createRPFormatterClass = (config) => {
         : `Failed at step definition line:${context.stepDefinition.line}`;
 
       switch (event.result.status) {
+      
         case 'passed': {
+          console.log("stepcount");
           context.stepStatus = 'passed';
           context.scenarioStatus = 'passed';
-          break;
+          if (global.browser) {
+            global.browser.takeScreenshot().then((png) => {
+              const fileObj = {
+                name: sceenshotName,
+                type: 'image/png',
+                content: png,
+              };
+              // console.log(context)
+              reportportal.sendLog(context.stepId, request, fileObj);
+            });
+            break;
+          }
         }
         case 'pending': {
           reportportal.sendLog(context.stepId, {
@@ -434,7 +455,7 @@ const createRPFormatterClass = (config) => {
           countFailedScenarios(event.testCase.sourceLocation.uri);
           const errorMessage = `${
             context.stepDefinition.uri
-          }\n ${event.result.exception.toString()}`;
+            }\n ${event.result.exception.toString()}`;
           reportportal.sendLog(context.stepId, {
             time: reportportal.helpers.now(),
             level: 'ERROR',
@@ -460,6 +481,7 @@ const createRPFormatterClass = (config) => {
         }
         default:
           break;
+          
       }
 
       // AfterStep
