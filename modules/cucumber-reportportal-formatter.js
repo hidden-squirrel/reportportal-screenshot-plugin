@@ -1,7 +1,7 @@
 const { Formatter } = require('cucumber');
 const ReportPortalClient = require('reportportal-client');
 const Path = require('path');
-
+var items = [];
 const createRPFormatterClass = (config) => {
   const getJSON = (json) => {
     try {
@@ -93,7 +93,7 @@ const createRPFormatterClass = (config) => {
     });
   }
 
-  function createScenarioOutlineName(outlineName,tableHeader,row){
+  function createScenarioOutlineName(outlineName, tableHeader, row) {
 
     tableHeader.cells.forEach((varable, index) => {
       outlineName = outlineName.replace(`<${varable.value}>`, row.cells[index].value);
@@ -109,7 +109,7 @@ const createRPFormatterClass = (config) => {
     return {
       type: 'Scenario',
       steps: createSteps(example.tableHeader, found, outline.steps),
-      name: createScenarioOutlineName(outline.name,example.tableHeader,found),
+      name: createScenarioOutlineName(outline.name, example.tableHeader, found),
       location: found.location,
       description: outline.description,
     };
@@ -200,6 +200,13 @@ const createRPFormatterClass = (config) => {
       context.failedScenarios[uri] = 1;
     }
   }
+  async function finishTestItems(data) {
+    await data.forEach(function (item) {
+      console.log(item);
+      reportportal.finishTestItem(item.stepId, item.request);
+    });
+
+  }
 
   return class CucumberReportPortalFormatter extends Formatter {
     constructor(options) {
@@ -209,7 +216,6 @@ const createRPFormatterClass = (config) => {
 
       this.isRerun = rerun || config.rerun;
       this.rerunOf = rerunOf || config.rerunOf;
-
       options.eventBroadcaster.on('gherkin-document', this.onGherkinDocument.bind(this));
       options.eventBroadcaster.on('pickle-accepted', this.onPickleAccepted.bind(this));
       options.eventBroadcaster.on('test-case-prepared', this.onTestCasePrepared.bind(this));
@@ -391,23 +397,24 @@ const createRPFormatterClass = (config) => {
         : `Failed at step definition line:${context.stepDefinition.line}`;
 
       switch (event.result.status) {
-      
+
         case 'passed': {
-          console.log("stepcount");
+          const stepName = context.step.text
+            ? `${context.step.keyword} ${context.step.text}`
+            : context.step.keyword;
           context.stepStatus = 'passed';
           context.scenarioStatus = 'passed';
-          if (global.browser) {
-            global.browser.takeScreenshot().then((png) => {
-              const fileObj = {
-                name: sceenshotName,
-                type: 'image/png',
-                content: png,
-              };
-              // console.log(context)
-              reportportal.sendLog(context.stepId, request, fileObj);
-            });
-            break;
-          }
+          var stepId = context.stepId;
+          global.browser.takeScreenshot().then((png) => {
+            const fileObj = {
+              name: sceenshotName,
+              type: 'image/png',
+              content: png,
+            };
+            reportportal.sendLog(stepId, request, fileObj);
+          });
+          break;
+          // }
         }
         case 'pending': {
           reportportal.sendLog(context.stepId, {
@@ -451,37 +458,40 @@ const createRPFormatterClass = (config) => {
           break;
         }
         case 'failed': {
+          const stepName = context.step.text
+            ? `${context.step.keyword} ${context.step.text}`
+            : context.step.keyword;
           context.stepStatus = 'failed';
           countFailedScenarios(event.testCase.sourceLocation.uri);
           const errorMessage = `${
-            context.stepDefinition.uri
+            stepName
             }\n ${event.result.exception.toString()}`;
-          reportportal.sendLog(context.stepId, {
+
+          var stepId = context.stepId;
+          const request = {
+            time: reportportal.helpers.now(),
+            level: 'ERROR',
+            file: { name: sceenshotName },
+            message: errorMessage,
+          };
+          global.browser.takeScreenshot().then((png) => {
+            const fileObj = {
+              name: sceenshotName,
+              type: 'image/png',
+              content: png,
+            };
+            reportportal.sendLog(stepId, request, fileObj);
+          });
+          reportportal.sendLog(stepId, {
             time: reportportal.helpers.now(),
             level: 'ERROR',
             message: errorMessage,
           });
-          if (global.browser && config.takeScreenshot && config.takeScreenshot === 'onFailure') {
-            const request = {
-              time: reportportal.helpers.now(),
-              level: 'ERROR',
-              file: { name: sceenshotName },
-              message: sceenshotName,
-            };
-            global.browser.takeScreenshot().then((png) => {
-              const fileObj = {
-                name: sceenshotName,
-                type: 'image/png',
-                content: png,
-              };
-              reportportal.sendLog(context.stepId, request, fileObj);
-            });
-          }
           break;
         }
         default:
           break;
-          
+
       }
 
       // AfterStep
@@ -502,9 +512,15 @@ const createRPFormatterClass = (config) => {
           comment: 'STEP IS PENDING IMPLEMENTATION',
         };
       }
-
+      // var data = {
+      //   stepId: context.stepId,
+      //   request: request
+      // }
+      // items.push(data);
       reportportal.finishTestItem(context.stepId, request);
     }
+
+
 
     onTestStepAttachment(event) {
       const fileName = !context.stepDefinition
@@ -558,7 +574,9 @@ const createRPFormatterClass = (config) => {
       }
     }
 
-    onTestCaseFinished(event) {
+    async onTestCaseFinished(event) {
+      // await finishTestItems(items);
+      items = [];
       if (!isScenarioBasedStatistics() && event.result.retried) {
         return;
       }

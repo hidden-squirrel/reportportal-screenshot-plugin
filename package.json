@@ -5,6 +5,7 @@
   "main": "./modules/index",
   "spec": "cucumber version >=4.x <=6.x",
   "dependencies": {
+    "cucumber": "^6.0.5",
     "reportportal-client": "^5.5.0"
   },
   "devDependencies": {
